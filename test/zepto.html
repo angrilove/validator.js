@@ -54,7 +54,7 @@
   <p><label>Range
       <small>(1 to 5)</small>:
       <input type="range" required min="1" max="5"></label>
-  <p><label>Email: <input type="email" required></label>
+  <p><label>Email: <input type="text" data-pattern="email" required></label>
 
   <p><label>Url: <input type="url" required></label>
 
@@ -65,7 +65,7 @@
   <p><label>Password: <input type="password" required></label>
 
   <p><label>Async Validate:
-  <input type="text" data-url="https://api.github.com/legacy/user/search/china" data-method="getJSON" required></label></p>
+  <input type="mobile" data-url="https://api.github.com/legacy/user/search/china" data-method="getJSON" required></label></p>
 
   <p><label>A or B:</label>
       <input type="text" data-aorb="a" required>
@@ -80,7 +80,7 @@
 
   <p><label>Custom Event: <input id="event" type="text" data-event="hello" required></label>
 
-  <p><textarea maxlength="20"  placeholder="some text" required data-error="textarea"></textarea></p>
+  <p><textarea maxlength="20" placeholder="some text" required data-error="textarea"></textarea></p>
 
   <p>Input email here:
   <div>
@@ -100,6 +100,7 @@
 <script type="text/javascript">
   $('#form').validator({
     errorCallback: function(unvalidFields){
+      console.log(unvalidFields, arguments);
         $(unvalidFields).each(function(i,item){
           //console.log(item.$el[0])
         })
@@ -107,12 +108,14 @@
     , isErrorOnParent: true
   });
 
-  $('#event').on('before:hello', function(event, element){
-    //console.log('`before.hello` event trigger on $("#' + element.id + '")');
+  $('#event').on('before:hello', function(event, element, err){
+    console.log('`before.hello` event trigger on $("#' + element.id + '")', event, element, err);
+    console.log($('#event'), element, element.attr('id'));
   })
 
-  $('#event').on('after:hello', function(event, element){
-    //console.log('`after.hello` event trigger on $("#' + element.id + '")');
+  $('#event').on('after:hello', function(event, element, err){
+    console.log('`after.hello` event trigger on $("#' + element.id + '")', event, element, err);
+    console.log($('#event'), element, element.attr('id'));
   })
 </script>
 

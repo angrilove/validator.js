@@ -6,8 +6,8 @@
 ~function ($) {
 
   var patterns, fields, errorElement, addErrorClass, removeErrorClass, novalidate, validateForm
-    , validate, validateFields, removeFromUnvalidFields, asyncValidate, getVal
-    , aorbValidate, validateReturn, unvalidFields = []
+    , validate, validateFields, removeFromInvalidFields, asyncValidate, getVal
+    , aorbValidate, validateReturn, invalidFields = []
 
   // 类型判断
   patterns = {
@@ -155,23 +155,30 @@
 
   // 异步验证
   asyncValidate = function ($item, klass, isErrorOnParent) {
-    var data = $item.data()
-      , url = data.url
-      , method = data.method || 'get'
-      , key = data.key || 'key'
+    var url = $item.data('url')
+      , method = $item.data('method') || 'get'
+      , key = $item.data('key') || 'key'
       , text = getVal($item)
       , params = {}
+      , data = {}
 
-    params[key] = text
+    data[key] = text
 
-    $[method](url, params).success(function (isValidate) {
-      var message = isValidate ? 'IM VALIDED' : 'unvalid'
+    params['data'] = data
+    params['url'] = url
+    params['type'] = method
+
+    params['success'] = function (isValidate) {
+      var message = isValidate ? 'IM VALIDED' : 'invalid'
       return validateReturn.call(this, $item, klass, isErrorOnParent, message)
-    }).error(function(){
-        // 异步错误，供调试用，理论上线上不应该继续运行
-      })
-  }
+    }
 
+    params['error'] = function() {
+      // 异步错误，供调试用，理论上线上不应该继续运行
+    }
+
+    $.ajax(params)
+  }
 
   // 二选一：二个项中必须的一个项是已经填
   // <input data-aorb="a" >
@@ -187,7 +194,7 @@
     result += validateReturn.apply(this, b) ? 0 : 1
 
     result = result > 0 ? (removeErrorClass.apply(this, a), removeErrorClass.apply(this, b), false) :
-      validateReturn.apply(this, a.concat('unvalid'))
+      validateReturn.apply(this, a.concat('invalid'))
 
     // 通过则返回 false
     return result
@@ -204,7 +211,7 @@
 
     pattern = $item.attr('pattern')
     pattern && pattern.replace('\\', '\\\\')
-    type = $item.attr('type') || 'text'
+    type = $item.data('pattern') || $item.attr('type') || 'text'
     // hack ie: 像 select 和 textarea 返回的 type 都为 NODENAME 而非空
     type = patterns[type] ? type : 'text'
     val = $.trim(getVal($item))
@@ -212,29 +219,29 @@
 
     // HTML5 pattern 支持
     message = message ? message :
-      pattern ? ((new RegExp(pattern)).test(val) || 'unvalid') :
-        patterns[type](val) || 'unvalid'
+      pattern ? ((new RegExp(pattern)).test(val) || 'invalid') :
+        patterns[type](val) || 'invalid'
 
     // 返回的错误对象 = {
     //    $el: {jQuery Element Object} // 当前表单项
     //  , type: {String} //表单的类型，如 [type=radio]
     //  , message: {String} // error message，只有两种值
     // }
-    // NOTE: 把 jQuery Object 传到 trigger 方法中作为参数，会变成原生的 DOM Object
-    if (message === 'unvalid') {
+    // NOTE: 把 jQuery Object 使用 Array 包装 传到 trigger 方法中作为参数，防止变成原生的 DOM Object
+    if (message === 'invalid') {
       removeErrorClass($item, klass, parent)
     }
 
-    return /^(?:unvalid|empty)$/.test(message) ? (ret = {
+    return /^(?:invalid|empty)$/.test(message) ? (ret = {
       $el: addErrorClass.call(this, $item, klass, parent, message)
       , type: type
       , error: message
-    }, $item.trigger('after:' + event, $item), ret):
-      (removeErrorClass.call(this, $item, klass, parent), $item.trigger('after:' + event, $item), false)
+    }, $item.trigger('after:' + event, [$item, ret]), ret):
+      (removeErrorClass.call(this, $item, klass, parent), $item.trigger('after:' + event, [$item]), false)
   }
 
   // 获取待校验的项
-  fields  = function (identifie, form) {
+  fields = function (identifie, form) {
     return $(identifie, form)
   }
 
@@ -246,11 +253,11 @@
   // 校验一个表单项
   // 出错时返回一个对象，当前表单项和类型；通过时返回 false
   validate = function ($item, klass, parent) {
-    var async, aorb, type, val, commonArgs, event
+    var async, aorb, type, val, commonArgs, event, returnValue
 
     // 把当前元素放到 patterns 对象中备用
     patterns.$item = $item
-    type = $item.attr('type')
+    type = $item.data("pattern") || $item.attr('type')
     val = getVal($item)
 
     async = $item.data('url')
@@ -260,14 +267,14 @@
     commonArgs = [$item, klass, parent]
 
     // 当指定 `data-event` 的时候在检测前触发自定义事件
-    // NOTE: 把 jQuery Object 传到 trigger 方法中作为参数，会变成原生的 DOM Object
-    event && $item.trigger('before:' + event, $item)
+    // NOTE: 把 jQuery Object 使用 Array 包装 传到 trigger 方法中作为参数，防止变成原生的 DOM Object
+    event && $item.trigger('before:' + event, [$item])
 
     // 所有都最先测试是不是 empty，checkbox 是可以有值
-    // 但通过来说我们更需要的是 checked 的状态
+    // 但通常来说我们更需要的是 checked 的状态
     // 暂时去掉 radio/checkbox/linkage/aorb 的 notEmpty 检测
     if (!(/^(?:radio|checkbox)$/.test(type) || aorb) && !patterns.text(val)) {
-      return validateReturn.call(this, $item, klass, parent, val.length ? 'unvalid' : 'empty')
+      return validateReturn.call(this, $item, klass, parent, val.length ? 'invalid' : 'empty')
     }
 
     // 二选一验证：有可能为空
@@ -275,18 +282,20 @@
       return aorbValidate.apply(this, commonArgs)
     }
 
-    // 异步验证则不进行普通验证
-    if (async) {
-      return asyncValidate.apply(this, commonArgs)
+    // 正常验证返回值
+    returnValue = validateReturn.call(this, $item, klass, parent)
+    // 正常验证不通过则立即返回
+    if (returnValue) {
+      return returnValue;
     }
 
-    // 正常验证返回值
-    return validateReturn.call(this, $item, klass, parent)
+    // 正常验证通过则异步验证
+    return !!async && asyncValidate.apply(this, commonArgs)
   }
 
   // 校验表单项
   validateFields = function ($fields, method, klass, parent) {
-    // TODO：坐成 delegate 的方式？
+    // TODO：做成 delegate 的方式？
     var reSpecialType = /^radio|checkbox/
       , field
     $.each($fields, function(i, f){
@@ -298,7 +307,7 @@
                      $items.closest('form'))
         }
         $items.each(function(){
-          (field = validate.call(this, $(this), klass, parent)) && unvalidFields.push(field)
+          (field = validate.call(this, $(this), klass, parent)) && invalidFields.push(field)
         })
       })
     })
@@ -310,31 +319,31 @@
       return true
     }
 
-    unvalidFields = $.map($fields, function (el) {
+    invalidFields = $.map($fields, function (el) {
       var field = validate.call(null, $(el), klass, parent)
       if (field) {
         return field
       }
     })
 
-    return validateFields.length ? unvalidFields : false
+    return validateFields.length ? invalidFields : false
   }
 
-  // 从 unvalidField 中删除
-  removeFromUnvalidFields = function ($item) {
+  // 从 invalidField 中删除
+  removeFromInvalidFields = function ($item) {
     var obj, index
 
-    // 从 unvalidFields 中删除
-    obj = $.grep(unvalidFields, function (item) {
+    // 从 invalidFields 中删除
+    obj = $.grep(invalidFields, function (item) {
       return (item.$el = $item)
     })[0]
 
     if(!obj) {
       return
     }
-    index = $.inArray(obj, unvalidFields)
-    unvalidFields.splice(index, 1)
-    return unvalidFields
+    index = $.inArray(obj, invalidFields)
+    invalidFields.splice(index, 1)
+    return invalidFields
   }
 
   // 添加/删除错误 class
@@ -350,8 +359,8 @@
   }
 
   removeErrorClass = function ($item, klass, parent) {
-    removeFromUnvalidFields.call(this, $item)
-    return errorElement($item, parent).removeClass(klass + ' empty unvalid')
+    removeFromInvalidFields.call(this, $item)
+    return errorElement($item, parent).removeClass(klass + ' empty invalid')
   }
 
   // 添加 `novalidate` 到 form 中，防止浏览器默认的校验（样式不一致并且太丑）
@@ -366,7 +375,7 @@
   //    klass: {String}, // 校验不通过时错误时添加的 class 名（默认是 `error`）
   //    isErrorOnParent: {Boolean} // 错误出现时 class 放在当前表单项还是（默认是 element 本身）
   //    method: {String | false}, // 触发表单项校验的方法，当是 false 在点 submit 按钮之前不校验（默认是 `blur`）
-  //    errorCallback(unvalidFields): {Function}, // 出错时的 callback，第一个参数是出错的表单项集合
+  //    errorCallback(invalidFields): {Function}, // 出错时的 callback，第一个参数是出错的表单项集合
   //
   //    before: {Function}, // 表单检验之前
   //    after: {Function}, // 表单校验之后，只有返回 True 表单才可能被提交
@@ -391,7 +400,7 @@
 
     // 当用户聚焦到某个表单时去除错误提示
     $form.on('focusin', identifie, function(){
-      removeErrorClass.call(this, $(this), 'error unvalid empty', isErrorOnParent)
+      removeErrorClass.call(this, $(this), 'error invalid empty', isErrorOnParent)
     })
 
     // 提交校验
@@ -400,8 +409,8 @@
       validateForm.call(this, $items, method, klass, isErrorOnParent)
 
       // 当指定 options.after 的时候，只有当 after 返回 true 表单才会提交
-      return unvalidFields.length ?
-        (e.preventDefault(), errorCallback.call(this, unvalidFields)) :
+      return invalidFields.length ?
+        (e.preventDefault(), errorCallback.call(this, invalidFields)) :
         after.call(this, e, $items)
     })
   }
